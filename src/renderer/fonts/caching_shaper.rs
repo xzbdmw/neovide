@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{num::NonZeroUsize, sync::Arc, time::SystemTime};
 
 use itertools::Itertools;
 use log::{debug, error, info, trace};
@@ -12,6 +12,7 @@ use swash::{
     },
     Metrics,
 };
+use time::{macros::format_description, OffsetDateTime};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -427,6 +428,11 @@ impl CachingShaper {
         let key = ShapeKey::new(text.clone(), style);
 
         if !self.blob_cache.contains(&key) {
+            let system_time: OffsetDateTime = SystemTime::now().into();
+            let timestamp = system_time
+                .format(format_description!("[second].[subsecond digits:3]"))
+                .expect("Failed to parse current time");
+            log::error!("shaping text before{:?} {:?}", timestamp, &text);
             let blobs = self.shape(text, style);
             self.blob_cache.put(key.clone(), blobs);
         }

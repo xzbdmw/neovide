@@ -74,7 +74,6 @@ pub use profiling::startup_profiler;
 
 const BACKTRACES_FILE: &str = "neovide_backtraces.log";
 const REQUEST_MESSAGE: &str = "This is a bug and we would love for it to be reported to https://github.com/neovide/neovide/issues";
-
 fn main() -> NeovideExitCode {
     set_hook(Box::new(|panic_info| {
         let backtrace = Backtrace::new();

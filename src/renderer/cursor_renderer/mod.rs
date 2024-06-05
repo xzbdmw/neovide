@@ -1,9 +1,11 @@
 mod blink;
 mod cursor_vfx;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 
 use skia_safe::{op, Canvas, Paint, Path};
+use time::macros::format_description;
+use time::{format_description, OffsetDateTime};
 use winit::event::{Event, WindowEvent};
 
 use crate::{
@@ -321,8 +323,18 @@ impl CursorRenderer {
         let style = &self.cursor.grid_cell.1;
         let coarse_style = style.as_ref().map(|style| style.into()).unwrap_or_default();
 
-        let blobs = &grid_renderer.shaper.shape_cached(character, coarse_style);
+        let system_time: OffsetDateTime = SystemTime::now().into();
 
+        let timestamp = system_time
+            .format(format_description!("[second].[subsecond digits:3]"))
+            .expect("Failed to parse current time");
+        log::error!(
+            "shape_cached before {:?} {:?}",
+            timestamp,
+            character.clone()
+        );
+
+        let blobs = &grid_renderer.shaper.shape_cached(character, coarse_style);
         for blob in blobs.iter() {
             canvas.draw_text_blob(
                 blob,
@@ -330,6 +342,12 @@ impl CursorRenderer {
                 &paint,
             );
         }
+        let system_time: OffsetDateTime = SystemTime::now().into();
+
+        let timestamp = system_time
+            .format(format_description!("[second].[subsecond digits:3]"))
+            .expect("Failed to parse current time");
+        log::error!("Cursor draw {:?}", timestamp);
 
         canvas.restore();
 

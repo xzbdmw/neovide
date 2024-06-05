@@ -4,6 +4,9 @@ use nvim_rs::{Handler, Neovim};
 use rmpv::Value;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::SystemTime;
+use time::macros::format_description;
+use time::OffsetDateTime;
 use tokio::sync::mpsc::UnboundedSender;
 use winit::event_loop::EventLoopProxy;
 
@@ -79,6 +82,13 @@ impl Handler for NeovimHandler {
         arguments: Vec<Value>,
         _neovim: Neovim<Self::Writer>,
     ) {
+        if event_name == "redraw" {
+            let system_time: OffsetDateTime = SystemTime::now().into();
+            let timestamp = system_time
+                .format(format_description!("[second].[subsecond digits:3]"))
+                .expect("Failed to parse current time");
+            log::error!("Neovim notification: {:?} {:?}", timestamp, &event_name);
+        }
         trace!("Neovim notification: {:?}", &event_name);
 
         match event_name.as_ref() {

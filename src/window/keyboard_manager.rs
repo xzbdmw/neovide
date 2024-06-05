@@ -1,5 +1,8 @@
+use std::time::SystemTime;
+
 use crate::bridge::{send_ui, SerialCommand};
 
+use time::macros::format_description;
 #[allow(unused_imports)]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::{
@@ -43,7 +46,18 @@ impl KeyboardManager {
                 log::trace!("{:#?}", key_event);
                 if key_event.state == ElementState::Pressed {
                     if let Some(text) = self.format_key(key_event) {
-                        log::trace!("Key pressed {} {:?}", text, self.modifiers.state());
+                        let system_time: time::OffsetDateTime = SystemTime::now().into();
+
+                        let timestamp = system_time
+                            .format(format_description!("[second].[subsecond digits:3]"))
+                            .expect("Failed to parse current time");
+                        // log::error!("key{:?}", timestamp);
+                        log::error!(
+                            "Key pressed {} {:?}{:?}",
+                            text,
+                            self.modifiers.state(),
+                            timestamp
+                        );
                         tracy_named_frame!("keyboard input");
                         send_ui(SerialCommand::Keyboard(text));
                     }

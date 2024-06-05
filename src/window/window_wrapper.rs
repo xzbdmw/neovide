@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use super::{
     KeyboardManager, MouseManager, UserEvent, WindowCommand, WindowSettings, WindowSettingsChanged,
 };
@@ -33,6 +35,7 @@ use icrate::Foundation::MainThreadMarker;
 
 use log::trace;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use time::{macros::format_description, OffsetDateTime};
 use winit::{
     dpi,
     event::{Event, Ime, WindowEvent},
@@ -426,6 +429,12 @@ impl WinitWindowWrapper {
 
     pub fn draw_frame(&mut self, dt: f32) {
         tracy_zone!("draw_frame");
+        let system_time: OffsetDateTime = SystemTime::now().into();
+
+        let timestamp = system_time
+            .format(format_description!("[second].[subsecond digits:3]"))
+            .expect("Failed to parse current time");
+        log::error!("draw frame begin{:?}", timestamp);
         if self.skia_renderer.is_none() {
             return;
         }
@@ -442,7 +451,21 @@ impl WinitWindowWrapper {
             tracy_gpu_zone!("wait for vsync");
             vsync.wait_for_vsync();
         }
+
+        let system_time: OffsetDateTime = SystemTime::now().into();
+
+        let timestamp = system_time
+            .format(format_description!("[second].[subsecond digits:3]"))
+            .expect("Failed to parse current time");
+        log::error!("swap buffer begin{:?}", timestamp);
         skia_renderer.swap_buffers();
+
+        let system_time: OffsetDateTime = SystemTime::now().into();
+
+        let timestamp = system_time
+            .format(format_description!("[second].[subsecond digits:3]"))
+            .expect("Failed to parse current time");
+        log::error!("swap buffer over{:?}", timestamp);
         if self.ui_state == UIState::FirstFrame {
             skia_renderer.window().set_visible(true);
             self.ui_state = UIState::Showing;
