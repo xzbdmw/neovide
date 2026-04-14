@@ -93,6 +93,30 @@ vim.api.nvim_create_user_command("NeovideFocus", function()
     rpcnotify("neovide.focus_window")
 end, {})
 
+M.get_window_cwd = function()
+    return rpcrequest("neovide.get_window_cwd")
+end
+
+M.is_window_cwd_open = function(cwd)
+    return rpcrequest("neovide.is_window_cwd_open", cwd)
+end
+
+M.focus_window_for_cwd = function(cwd)
+    return rpcrequest("neovide.focus_window_for_cwd", cwd)
+end
+
+M.open_window_for_cwd = function(cwd)
+    rpcnotify("neovide.open_window_for_cwd", cwd)
+end
+
+M.consume_pending_restore_cwd = function()
+    return rpcrequest("neovide.consume_pending_restore_cwd")
+end
+
+M.set_window_cwd = function(cwd)
+    rpcnotify("neovide.set_window_cwd", cwd)
+end
+
 
 if vim.fn.has("mac") == 1 then
     local URL_PATTERN = "https?://[%w-_%.]+%.%w[%w-_%.%%%?%.:/+=&%%[%]#]*"

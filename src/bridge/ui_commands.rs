@@ -36,6 +36,15 @@ pub static HANDLER_REGISTRY: LazyLock<Mutex<Option<NeovimHandler>>> =
 pub static ROUTE_HANDLER_REGISTRY: LazyLock<Mutex<HashMap<RouteId, NeovimHandler>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Current working directory currently owned by each route.
+pub static ROUTE_CWD_REGISTRY: LazyLock<Mutex<HashMap<RouteId, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Current working directory requested for a newly created route before the
+/// plugin has restored its session.
+pub static ROUTE_REQUESTED_CWD_REGISTRY: LazyLock<Mutex<HashMap<RouteId, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 /// Startup buffer for macOS cold start. file drops that can arrive before any
 /// ready to replay them safely.
 #[cfg(target_os = "macos")]
@@ -484,6 +493,34 @@ pub fn register_route_handler(route_id: RouteId, handler: NeovimHandler) {
     HANDLER_REGISTRY.lock().unwrap().replace(handler);
 }
 
+pub fn register_route_cwd(route_id: RouteId, cwd: String) {
+    ROUTE_CWD_REGISTRY.lock().unwrap().insert(route_id, cwd);
+}
+
+pub fn route_for_cwd(cwd: &str) -> Option<RouteId> {
+    ROUTE_CWD_REGISTRY
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|(route_id, current_cwd)| (current_cwd == cwd).then_some(*route_id))
+}
+
+pub fn current_cwd_for_route(route_id: RouteId) -> Option<String> {
+    ROUTE_CWD_REGISTRY.lock().unwrap().get(&route_id).cloned()
+}
+
+pub fn register_requested_cwd(route_id: RouteId, cwd: String) {
+    ROUTE_REQUESTED_CWD_REGISTRY.lock().unwrap().insert(route_id, cwd);
+}
+
+pub fn requested_cwd_for_route(route_id: RouteId) -> Option<String> {
+    ROUTE_REQUESTED_CWD_REGISTRY.lock().unwrap().get(&route_id).cloned()
+}
+
+pub fn clear_requested_cwd(route_id: RouteId) {
+    ROUTE_REQUESTED_CWD_REGISTRY.lock().unwrap().remove(&route_id);
+}
+
 pub fn set_active_route_handler(route_id: RouteId) {
     if let Some(handler) = ROUTE_HANDLER_REGISTRY.lock().unwrap().get(&route_id).cloned() {
         HANDLER_REGISTRY.lock().unwrap().replace(handler);
@@ -502,4 +539,7 @@ pub fn unregister_route_handler(route_id: RouteId) {
     } else {
         active.take();
     }
+
+    ROUTE_CWD_REGISTRY.lock().unwrap().remove(&route_id);
+    ROUTE_REQUESTED_CWD_REGISTRY.lock().unwrap().remove(&route_id);
 }

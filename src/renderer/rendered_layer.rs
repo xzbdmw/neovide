@@ -70,7 +70,20 @@ impl FloatingLayer<'_> {
             self.build_draw_clip_and_bounds(silhouette.clone(), bound_rect, &regions, grid_scale);
         let has_transparency = self.windows.iter().any(|window| window.has_transparency());
 
-        self._draw_shadow(root_canvas, &silhouette, settings);
+        let zindices: Vec<u64> = settings
+            .flatten_floating_zindex
+            .split(',')
+            .flat_map(|index| u64::from_str_radix(&index, 10))
+            .collect();
+
+        if !self.windows.iter().any(|window| {
+            window
+                .anchor_info
+                .as_ref()
+                .is_some_and(|anchor_info| zindices.contains(&anchor_info.sort_order.z_index))
+        }) {
+            self._draw_shadow(root_canvas, &silhouette, settings);
+        }
 
         root_canvas.save();
         root_canvas.clip_path(&draw_clip, None, Some(false));

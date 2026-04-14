@@ -42,7 +42,8 @@ use crate::{
     CmdLineSettings,
     bridge::{
         NeovimHandler, NeovimRuntime, OpenArgs, OpenMode, ParallelCommand, RestartDetails,
-        SerialCommand, send_ui, set_active_route_handler, unregister_route_handler,
+        SerialCommand, clear_requested_cwd, register_requested_cwd, send_ui,
+        set_active_route_handler, unregister_route_handler,
     },
     clipboard::ClipboardHandle,
     cmd_line::{GeometryArgs, MouseCursorIcon},
@@ -1411,6 +1412,7 @@ impl WinitWindowWrapper {
         proxy: &EventLoopProxy<EventPayload>,
         cwd: Option<&Path>,
         args: Option<OpenArgs>,
+        requested_cwd: Option<String>,
     ) {
         let creating_initial_window = self.routes.is_empty();
         let route_id = if creating_initial_window {
@@ -1510,6 +1512,10 @@ impl WinitWindowWrapper {
                     route_core.cwd,
                 )
             } else {
+                if let Some(cwd) = requested_cwd.as_ref() {
+                    register_requested_cwd(route_id, cwd.clone());
+                }
+
                 let config = Config::init();
                 let renderer = Rc::new(RefCell::new(Box::new(Renderer::new(
                     1.0,
@@ -1531,6 +1537,7 @@ impl WinitWindowWrapper {
                 ) {
                     Ok(handler) => handler,
                     Err(err) => {
+                        clear_requested_cwd(route_id);
                         let msg = format!("Failed to launch neovim runtime: {err:?}");
                         log::error!("{msg}");
                         let _ = proxy.send_event(EventPayload::all(UserEvent::NeovimLaunchError {

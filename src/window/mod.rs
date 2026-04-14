@@ -156,6 +156,10 @@ pub enum UserEvent {
     #[cfg(target_os = "macos")]
     CreateWindow,
     #[cfg(target_os = "macos")]
+    CreateCwdWindow {
+        cwd: String,
+    },
+    #[cfg(target_os = "macos")]
     MacShortcut(MacShortcutCommand),
 }
 

@@ -271,14 +271,14 @@ impl Application {
         }
 
         if self.settings.get::<CmdLineSettings>().server.is_some() {
-            self.window_wrapper.try_create_window(event_loop, &self.proxy, cwd, None);
+            self.window_wrapper.try_create_window(event_loop, &self.proxy, cwd, None, None);
             self.mark_should_render_all();
             self.send_file_drops(args);
             return;
         }
 
         let open_args = (!args.files_to_open.is_empty()).then_some(args);
-        self.window_wrapper.try_create_window(event_loop, &self.proxy, cwd, open_args);
+        self.window_wrapper.try_create_window(event_loop, &self.proxy, cwd, open_args, None);
         self.mark_should_render_all();
     }
 
@@ -378,7 +378,7 @@ impl Application {
         #[cfg(feature = "profiling")]
         self.aggregate_should_render().plot_tracy();
         if self.create_window_allowed && self.window_wrapper.has_pending_window_creation() {
-            self.window_wrapper.try_create_window(event_loop, &self.proxy, None, None);
+            self.window_wrapper.try_create_window(event_loop, &self.proxy, None, None, None);
         }
         event_loop.set_control_flow(self.next_control_flow(Instant::now()));
     }
@@ -816,7 +816,20 @@ impl ApplicationHandler<EventPayload> for Application {
             }
             #[cfg(target_os = "macos")]
             UserEvent::CreateWindow => {
-                self.window_wrapper.try_create_window(event_loop, &self.proxy, None, None);
+                self.window_wrapper.try_create_window(event_loop, &self.proxy, None, None, None);
+                self.sync_render_states();
+                self.mark_should_render_all();
+            }
+            #[cfg(target_os = "macos")]
+            UserEvent::CreateCwdWindow { cwd } => {
+                let requested_cwd = cwd.clone();
+                self.window_wrapper.try_create_window(
+                    event_loop,
+                    &self.proxy,
+                    Some(Path::new(&cwd)),
+                    None,
+                    Some(requested_cwd),
+                );
                 self.sync_render_states();
                 self.mark_should_render_all();
             }

@@ -3,6 +3,8 @@ use std::sync::{
     Arc, Mutex, RwLock,
     atomic::{AtomicBool, Ordering},
 };
+#[cfg(target_os = "macos")]
+use std::{fs, path::PathBuf};
 
 use async_trait::async_trait;
 use log::{trace, warn};
@@ -16,15 +18,18 @@ use crate::window::ForceClickKind;
 use crate::{
     LoggingReceiver, LoggingSender,
     bridge::{
-        GuiOption, NeovimWriter, ParallelCommand, RedrawEvent,
+        GuiOption, NeovimWriter, ParallelCommand, RedrawEvent, clear_requested_cwd,
         clipboard::{get_clipboard_contents, set_clipboard_contents},
+        current_cwd_for_route,
         events::parse_redraw_event,
-        parse_progress_bar_event, send_ui,
+        parse_progress_bar_event, register_route_cwd, requested_cwd_for_route, route_for_cwd,
+        send_ui,
     },
     clipboard::ClipboardHandle,
     error_handling::ResultPanicExplanation,
     running_tracker::RunningTracker,
     settings::{FontConfigState, Settings},
+    utils::expand_tilde,
     window::{EventPayload, RouteId, UserEvent, WindowCommand},
 };
 
@@ -177,6 +182,47 @@ impl Handler for NeovimHandler {
                     .map_err(|_| ClipboardRequestError::CannotSetContents)
             })
             .map_err(Value::from),
+            #[cfg(target_os = "macos")]
+            "neovide.get_window_cwd" => {
+                Ok(current_cwd_for_route(self.route_id).map(Value::from).unwrap_or(Value::Nil))
+            }
+            #[cfg(target_os = "macos")]
+            "neovide.is_window_cwd_open" => {
+                let Some(cwd) = arguments.first().and_then(Value::as_str) else {
+                    return Err(Value::from("neovide.is_window_cwd_open requires a cwd string"));
+                };
+                let cwd = normalize_cwd(cwd);
+                Ok(Value::from(route_for_cwd(&cwd).is_some()))
+            }
+            #[cfg(target_os = "macos")]
+            "neovide.focus_window_for_cwd" => {
+                let Some(cwd) = arguments.first().and_then(Value::as_str) else {
+                    return Err(Value::from("neovide.focus_window_for_cwd requires a cwd string"));
+                };
+                let cwd = normalize_cwd(cwd);
+                if let Some(route_id) = route_for_cwd(&cwd) {
+                    self.proxy
+                        .lock()
+                        .unwrap()
+                        .send_event(EventPayload::for_route(
+                            UserEvent::WindowCommand(WindowCommand::FocusWindow),
+                            route_id,
+                        ))
+                        .map_err(|error| {
+                            Value::from(format!("failed to focus window for cwd {cwd}: {error}"))
+                        })?;
+                    Ok(Value::from(true))
+                } else {
+                    Ok(Value::from(false))
+                }
+            }
+            #[cfg(target_os = "macos")]
+            "neovide.consume_pending_restore_cwd" => {
+                let value =
+                    requested_cwd_for_route(self.route_id).map(Value::from).unwrap_or(Value::Nil);
+                clear_requested_cwd(self.route_id);
+                Ok(value)
+            }
             "neovide.quit" => {
                 let error_code =
                     arguments[0].as_i64().expect("Could not parse error code from neovim");
@@ -245,6 +291,23 @@ impl Handler for NeovimHandler {
             }
             "neovide.focus_window" => {
                 self.send_window_command(WindowCommand::FocusWindow);
+            }
+            #[cfg(target_os = "macos")]
+            "neovide.open_window_for_cwd" => {
+                if let Some(cwd) = arguments.first().and_then(Value::as_str) {
+                    let cwd = normalize_cwd(cwd);
+                    let _ = self
+                        .proxy
+                        .lock()
+                        .unwrap()
+                        .send_event(EventPayload::all(UserEvent::CreateCwdWindow { cwd }));
+                }
+            }
+            #[cfg(target_os = "macos")]
+            "neovide.set_window_cwd" => {
+                if let Some(cwd) = arguments.first().and_then(Value::as_str) {
+                    register_route_cwd(self.route_id, normalize_cwd(cwd));
+                }
             }
             #[cfg(target_os = "macos")]
             "neovide.force_click" => match parse_force_click_args(&arguments) {
@@ -316,6 +379,19 @@ fn parse_force_click_args(
     let kind = ForceClickKind::from(kind_str);
 
     Some((col, row, entity, guifont, kind))
+}
+
+#[cfg(target_os = "macos")]
+fn normalize_cwd(cwd: &str) -> String {
+    let expanded = expand_tilde(cwd);
+    let path = PathBuf::from(&expanded);
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir().map_or(path.clone(), |base| base.join(path))
+    };
+
+    fs::canonicalize(&absolute).unwrap_or(absolute).to_string_lossy().into_owned()
 }
 
 async fn skip_default_guifont(

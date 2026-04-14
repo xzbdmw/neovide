@@ -51,8 +51,10 @@ pub use session::NeovimWriter;
 #[cfg(target_os = "macos")]
 pub use ui_commands::send_or_queue_file_drop;
 pub use ui_commands::{
-    ParallelCommand, SerialCommand, require_active_handler, send_ui, set_active_route_handler,
-    start_ui_command_handler, unregister_route_handler,
+    ParallelCommand, SerialCommand, clear_requested_cwd, current_cwd_for_route,
+    register_requested_cwd, register_route_cwd, requested_cwd_for_route, require_active_handler,
+    route_for_cwd, send_ui, set_active_route_handler, start_ui_command_handler,
+    unregister_route_handler,
 };
 
 const NEOVIM_REQUIRED_VERSION: (u64, u64, u64) = (0, 10, 0);
@@ -199,7 +201,9 @@ async fn create_neovim_session(
     options.set_multigrid_external(!cmdline_settings.no_multi_grid);
     options.set_rgb(true);
     #[cfg(target_os = "macos")]
-    options.set_hlstate_external(true);
+    if api_information.version.has_version(0, 12, 0, None) {
+        options.set_hlstate_external(true);
+    }
     // We can close the handle here, as Neovim already owns it
     #[cfg(not(target_os = "windows"))]
     if let Some(fd) = session.stdin_fd.take() {
