@@ -117,6 +117,29 @@ M.set_window_cwd = function(cwd)
     rpcnotify("neovide.set_window_cwd", cwd)
 end
 
+M.notify = function(title, body, opts)
+    local payload
+    if type(title) == "table" then
+        payload = vim.deepcopy(title)
+    else
+        payload = vim.tbl_extend("keep", opts or {}, {
+            title = title,
+            body = body,
+        })
+    end
+
+    if payload.title == nil and payload.body ~= nil then
+        payload.title = "Neovide"
+    end
+
+    if payload.body == nil and type(payload.title) == "string" then
+        payload.body = payload.title
+        payload.title = "Neovide"
+    end
+
+    pcall(rpcnotify, "neovide.notify", payload)
+end
+
 
 if vim.fn.has("mac") == 1 then
     local URL_PATTERN = "https?://[%w-_%.]+%.%w[%w-_%.%%%?%.:/+=&%%[%]#]*"

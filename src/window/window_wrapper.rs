@@ -30,7 +30,7 @@ use {
     crate::window::macos::tab_navigation::{TabNavigationAction, TabNavigationHotkeys},
     crate::window::macos::{
         MacosWindowFeature, TouchpadStage, hide_application, is_focus_suppressed,
-        is_tab_overview_active, native_tab_bar_enabled, trigger_tab_overview,
+        is_tab_overview_active, native_tab_bar_enabled, show_notification, trigger_tab_overview,
     },
     crate::{error_msg, window::settings},
     glamour::Point2,
@@ -461,6 +461,13 @@ impl WinitWindowWrapper {
                 }
             }
             #[cfg(target_os = "macos")]
+            WindowCommand::ShowNotification { title, body, subtitle } => {
+                if let Some(route_id) = self.route_id_for_window(target_window_id) {
+                    let is_focused = self.get_focused_route() == Some(target_window_id);
+                    show_notification(route_id, &title, &body, subtitle.as_deref(), is_focused);
+                }
+            }
+            #[cfg(target_os = "macos")]
             WindowCommand::TouchpadPressure { col, row, entity, guifont, kind } => {
                 let Some(macos_feature) = self.macos_feature_for_window(target_window_id) else {
                     log::warn!("Touchpad pressure received before macOS feature initialization");
@@ -562,6 +569,10 @@ impl WinitWindowWrapper {
                     ParallelCommand::DisplayAvailableFonts(font_names),
                     &route_core.neovim_handler,
                 );
+            }
+            #[cfg(target_os = "macos")]
+            WindowCommand::ShowNotification { title, body, subtitle } => {
+                show_notification(route_id, &title, &body, subtitle.as_deref(), false);
             }
             _ => {}
         }

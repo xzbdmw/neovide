@@ -322,6 +322,18 @@ impl Handler for NeovimHandler {
                 }
                 None => warn!("neovide.force_click called with invalid arguments: {arguments:?}"),
             },
+            #[cfg(target_os = "macos")]
+            "neovide.notify" => match parse_notification_args(&arguments) {
+                Some((title, body, subtitle)) => {
+                    let subtitle = subtitle.or_else(|| current_cwd_for_route(self.route_id));
+                    self.send_window_command(WindowCommand::ShowNotification {
+                        title,
+                        body,
+                        subtitle,
+                    });
+                }
+                None => warn!("neovide.notify called with invalid arguments: {arguments:?}"),
+            },
             "neovide.exec_detach_handler" => {
                 send_ui(ParallelCommand::Quit, self);
             }
@@ -382,6 +394,35 @@ fn parse_force_click_args(
 }
 
 #[cfg(target_os = "macos")]
+fn parse_notification_args(arguments: &[Value]) -> Option<(String, String, Option<String>)> {
+    let map = arguments.first()?.as_map()?;
+    let title = map
+        .iter()
+        .find(|(key, _)| key.as_str() == Some("title"))
+        .and_then(|(_, value)| value.as_str())
+        .unwrap_or("Neovide")
+        .to_string();
+    let body = map
+        .iter()
+        .find(|(key, _)| key.as_str() == Some("body"))
+        .and_then(|(_, value)| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let subtitle = map
+        .iter()
+        .find(|(key, _)| key.as_str() == Some("subtitle"))
+        .and_then(|(_, value)| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+
+    if title.is_empty() && body.is_empty() {
+        return None;
+    }
+
+    Some((title, body, subtitle))
+}
+
+#[cfg(target_os = "macos")]
 fn normalize_cwd(cwd: &str) -> String {
     let expanded = expand_tilde(cwd);
     let path = PathBuf::from(&expanded);
@@ -430,8 +471,12 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    #[cfg(target_os = "macos")]
+    use super::parse_notification_args;
     use super::{ClipboardRequestError, handle_clipboard_request};
     use crate::clipboard::{Clipboard, ClipboardError, ClipboardHandle, ProviderState};
+    #[cfg(target_os = "macos")]
+    use rmpv::Value;
 
     fn unavailable_clipboard(error: ClipboardError) -> Arc<Mutex<Clipboard>> {
         Arc::new(Mutex::new(Clipboard::from_provider_states_for_test(
@@ -478,5 +523,21 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(error, ClipboardRequestError::LockUnavailable(_)));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parse_notification_args_uses_optional_subtitle() {
+        let args = vec![Value::Map(vec![
+            (Value::from("title"), Value::from("Codex")),
+            (Value::from("body"), Value::from("Finished")),
+            (Value::from("subtitle"), Value::from("/tmp/project")),
+        ])];
+
+        let parsed = parse_notification_args(&args);
+        assert_eq!(
+            parsed,
+            Some(("Codex".to_string(), "Finished".to_string(), Some("/tmp/project".to_string())))
+        );
     }
 }

@@ -27,6 +27,13 @@ use objc2_foundation::{
     NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRange, NSRect,
     NSSize, NSString, NSTimer, NSURL, NSUserDefaults, ns_string,
 };
+use block2::RcBlock;
+use objc2_user_notifications::{
+    UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
+    UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationResponse,
+    UNNotificationSound, UNUserNotificationCenter, UNUserNotificationCenterDelegate,
+};
+use std::sync::Once;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -42,7 +49,8 @@ use winit::{event_loop::EventLoopProxy, window::Window};
 use crate::units::{Pixel, PixelRect};
 use crate::window::macos::hotkey::GlobalHotkeys;
 use crate::window::{
-    EventPayload, ForceClickKind, UserEvent, WindowSettings, WindowSettingsChanged,
+    EventPayload, ForceClickKind, RouteId, UserEvent, WindowCommand, WindowSettings,
+    WindowSettingsChanged,
 };
 
 thread_local! {
@@ -97,6 +105,151 @@ fn request_new_window() {
 
     if let Err(error) = proxy.send_event(EventPayload::all(UserEvent::CreateWindow)) {
         log::error!("Failed to request a new window: {:?}", error);
+    }
+}
+
+const NEOVIDE_NOTIFICATION_ID_PREFIX: &str = "neovide";
+
+/// Returns the notification center if the app has a bundle identifier.
+/// UNUserNotificationCenter requires a bundled app; calling it from a bare
+/// binary (e.g. `cargo install --path .`) throws an ObjC exception.
+fn has_bundle_identifier() -> bool {
+    unsafe {
+        let cls = class!(NSBundle);
+        let bundle: *mut AnyObject = msg_send![cls, mainBundle];
+        if bundle.is_null() {
+            return false;
+        }
+        let identifier: *mut AnyObject = msg_send![bundle, bundleIdentifier];
+        if identifier.is_null() {
+            return false;
+        }
+        let length: usize = msg_send![identifier, length];
+        length > 0
+    }
+}
+
+static NOTIFICATION_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+fn is_notification_available() -> bool {
+    *NOTIFICATION_AVAILABLE.get_or_init(|| {
+        if !has_bundle_identifier() {
+            log::warn!("Notifications unavailable: app has no bundle identifier");
+            false
+        } else {
+            true
+        }
+    })
+}
+
+/// One-time initialization: request authorization and set delegate.
+fn initialize_notifications() {
+    static INIT: Once = Once::new();
+    if !is_notification_available() {
+        return;
+    }
+    INIT.call_once(|| {
+        let center = UNUserNotificationCenter::currentNotificationCenter();
+        unsafe {
+            center.requestAuthorizationWithOptions_completionHandler(
+                UNAuthorizationOptions::Alert
+                    | UNAuthorizationOptions::Sound
+                    | UNAuthorizationOptions::Provisional,
+                &RcBlock::new(|ok: objc2::runtime::Bool, err: *mut objc2_foundation::NSError| {
+                    if ok.is_false() {
+                        if !err.is_null() {
+                            let err: &objc2_foundation::NSError = &*err;
+                            log::error!(
+                                "Notification authorization failed: {}",
+                                err.localizedDescription()
+                            );
+                        } else {
+                            log::error!("Notification authorization denied");
+                        }
+                    }
+                }),
+            );
+        }
+
+        let delegate = NotificationCenterDelegate::new_delegate();
+        let delegate_proto = ProtocolObject::from_retained(delegate.clone());
+        center.setDelegate(Some(&delegate_proto));
+        // Intentionally leak the delegate — the notification center holds a weak reference,
+        // so the delegate must outlive the center. Stashing in a global is unreliable;
+        // wezterm uses the same pattern.
+        Retained::into_raw(delegate);
+    });
+}
+
+fn notification_identifier_for_route(route_id: RouteId) -> String {
+    format!(
+        "{NEOVIDE_NOTIFICATION_ID_PREFIX}:{}:{}",
+        route_id.as_u64(),
+        time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+    )
+}
+
+fn route_id_from_notification_identifier(identifier: &str) -> Option<RouteId> {
+    let mut parts = identifier.split(':');
+    match (parts.next(), parts.next()) {
+        (Some(NEOVIDE_NOTIFICATION_ID_PREFIX), Some(route_id)) => {
+            route_id.parse::<u64>().ok().map(RouteId::from_u64)
+        }
+        _ => None,
+    }
+}
+
+pub fn show_notification(
+    route_id: RouteId,
+    title: &str,
+    body: &str,
+    subtitle: Option<&str>,
+    is_focused: bool,
+) {
+    initialize_notifications();
+    if !is_notification_available() {
+        return;
+    }
+    let center = UNUserNotificationCenter::currentNotificationCenter();
+
+    let id_string = notification_identifier_for_route(route_id);
+
+    unsafe {
+        let content = UNMutableNotificationContent::new();
+        content.setTitle(&NSString::from_str(title));
+        content.setBody(&NSString::from_str(body));
+        if let Some(subtitle) = subtitle.filter(|s| !s.is_empty()) {
+            content.setSubtitle(&NSString::from_str(subtitle));
+        }
+        content.setSound(Some(&UNNotificationSound::defaultSound()));
+
+        let identifier = NSString::from_str(&id_string);
+        let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
+            &identifier,
+            &content,
+            None,
+        );
+
+        center.addNotificationRequest_withCompletionHandler(
+            &request,
+            Some(&RcBlock::new(|err: *mut objc2_foundation::NSError| {
+                if !err.is_null() {
+                    let err: &objc2_foundation::NSError = &*err;
+                    log::warn!("Failed to deliver notification: {}", err.localizedDescription());
+                }
+            })),
+        );
+    }
+
+    // If the target window is already focused, auto-dismiss after 3 seconds.
+    // If a different window or app is focused, leave it persistent.
+    if is_focused {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let center = UNUserNotificationCenter::currentNotificationCenter();
+            let ids = NSArray::from_retained_slice(&[NSString::from_str(&id_string)]);
+            center.removeDeliveredNotificationsWithIdentifiers(&ids);
+        });
     }
 }
 
@@ -1498,6 +1651,70 @@ impl WindowMenuNotificationHandler {
             );
     }
 }
+
+define_class!(
+    #[derive(Debug)]
+    #[unsafe(super = NSObject)]
+    #[name = "NeovideNotifDelegate"]
+    struct NotificationCenterDelegate;
+
+    unsafe impl NSObjectProtocol for NotificationCenterDelegate {}
+    unsafe impl UNUserNotificationCenterDelegate for NotificationCenterDelegate {
+        #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
+        unsafe fn will_present_notification(
+            &self,
+            _center: &UNUserNotificationCenter,
+            _notification: &UNNotification,
+            completion_handler: &block2::Block<dyn Fn(UNNotificationPresentationOptions)>,
+        ) {
+            // Show banner + sound + list when the app is in the foreground.
+            // Auto-dismiss is handled by show_notification() based on whether
+            // the notification's target window is the focused one.
+            completion_handler.call((
+                UNNotificationPresentationOptions::Banner
+                    | UNNotificationPresentationOptions::Sound
+                    | UNNotificationPresentationOptions::List,
+            ));
+        }
+
+        #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
+        unsafe fn did_receive_notification_response(
+            &self,
+            center: &UNUserNotificationCenter,
+            response: &UNNotificationResponse,
+            completion_handler: &block2::Block<dyn Fn()>,
+        ) {
+            let request = response.notification().request();
+            let identifier = request.identifier();
+            let id_str = identifier.to_string();
+
+            if let Some(route_id) = route_id_from_notification_identifier(&id_str) {
+                if let Some(proxy) = EVENT_LOOP_PROXY.get() {
+                    let _ = proxy.send_event(EventPayload::for_route(
+                        UserEvent::WindowCommand(WindowCommand::FocusWindow),
+                        route_id,
+                    ));
+                } else {
+                    log::warn!("Notification clicked before event loop proxy became available");
+                }
+            }
+
+            // Remove the delivered notification.
+            let ids = NSArray::from_retained_slice(&[identifier]);
+            center.removeDeliveredNotificationsWithIdentifiers(&ids);
+
+            completion_handler.call(());
+        }
+    }
+);
+
+impl NotificationCenterDelegate {
+    fn new_delegate() -> Retained<Self> {
+        let this = NotificationCenterDelegate::alloc().set_ivars(());
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
 #[derive(Debug)]
 struct Menu {
     quit_handler: Retained<QuitHandler>,

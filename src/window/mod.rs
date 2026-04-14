@@ -100,6 +100,12 @@ pub enum WindowCommand {
     ListAvailableFonts,
     FocusWindow,
     #[cfg(target_os = "macos")]
+    ShowNotification {
+        title: String,
+        body: String,
+        subtitle: Option<String>,
+    },
+    #[cfg(target_os = "macos")]
     TouchpadPressure {
         col: i64,
         row: i64,
@@ -179,6 +185,14 @@ impl RouteId {
     pub fn next() -> Self {
         static NEXT_ROUTE_ID: AtomicU64 = AtomicU64::new(1);
         Self(NEXT_ROUTE_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub(crate) fn from_u64(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub(crate) fn as_u64(self) -> u64 {
+        self.0
     }
 }
 
