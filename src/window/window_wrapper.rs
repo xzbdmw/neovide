@@ -29,8 +29,9 @@ use {
     crate::window::MacShortcutCommand,
     crate::window::macos::tab_navigation::{TabNavigationAction, TabNavigationHotkeys},
     crate::window::macos::{
-        MacosWindowFeature, TouchpadStage, hide_application, is_focus_suppressed,
-        is_tab_overview_active, native_tab_bar_enabled, show_notification, trigger_tab_overview,
+        MacosWindowFeature, TouchpadStage, hide_application, is_app_active,
+        is_focus_suppressed, is_tab_overview_active, native_tab_bar_enabled, show_notification,
+        trigger_tab_overview,
     },
     crate::{error_msg, window::settings},
     glamour::Point2,
@@ -461,10 +462,28 @@ impl WinitWindowWrapper {
                 }
             }
             #[cfg(target_os = "macos")]
-            WindowCommand::ShowNotification { title, body, subtitle } => {
+            WindowCommand::ShowNotification { title, body, subtitle, on_click } => {
                 if let Some(route_id) = self.route_id_for_window(target_window_id) {
-                    let is_focused = self.get_focused_route() == Some(target_window_id);
-                    show_notification(route_id, &title, &body, subtitle.as_deref(), is_focused);
+                    let is_focused =
+                        is_app_active() && self.get_focused_route() == Some(target_window_id);
+                    show_notification(
+                        route_id,
+                        &title,
+                        &body,
+                        subtitle.as_deref(),
+                        on_click.as_deref(),
+                        is_focused,
+                    );
+                }
+            }
+            #[cfg(target_os = "macos")]
+            WindowCommand::NotificationClicked { on_click } => {
+                if let Some(route) = self.routes.get(&target_window_id) {
+                    let neovim_handler = &route.window.neovim_handler;
+                    send_ui(
+                        SerialCommand::Keyboard(format!("<cmd>{}<cr>", on_click)),
+                        neovim_handler,
+                    );
                 }
             }
             #[cfg(target_os = "macos")]
@@ -571,8 +590,8 @@ impl WinitWindowWrapper {
                 );
             }
             #[cfg(target_os = "macos")]
-            WindowCommand::ShowNotification { title, body, subtitle } => {
-                show_notification(route_id, &title, &body, subtitle.as_deref(), false);
+            WindowCommand::ShowNotification { title, body, subtitle, on_click } => {
+                show_notification(route_id, &title, &body, subtitle.as_deref(), on_click.as_deref(), false);
             }
             _ => {}
         }

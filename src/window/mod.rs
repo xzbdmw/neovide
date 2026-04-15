@@ -104,6 +104,11 @@ pub enum WindowCommand {
         title: String,
         body: String,
         subtitle: Option<String>,
+        on_click: Option<String>,
+    },
+    #[cfg(target_os = "macos")]
+    NotificationClicked {
+        on_click: String,
     },
     #[cfg(target_os = "macos")]
     TouchpadPressure {

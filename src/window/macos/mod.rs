@@ -3,6 +3,6 @@ pub mod tab_navigation;
 
 pub use crate::platform::macos::{
     MacosWindowFeature, TouchpadStage, get_last_host_window, get_ns_window, hide_application,
-    is_focus_suppressed, is_tab_overview_active, native_tab_bar_enabled, register_file_handler,
-    show_notification, trigger_tab_overview, window_identifier,
+    is_app_active, is_focus_suppressed, is_tab_overview_active, native_tab_bar_enabled,
+    register_file_handler, show_notification, trigger_tab_overview, window_identifier,
 };

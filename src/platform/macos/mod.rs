@@ -1,7 +1,7 @@
 pub mod settings;
 use std::cell::Cell;
 use std::sync::{
-    OnceLock,
+    LazyLock, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
 use std::{cell::RefCell, ffi::CString, os::raw::c_void, path::Path, ptr, str, sync::Arc};
@@ -108,6 +108,13 @@ fn request_new_window() {
     }
 }
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+/// Maps notification identifier → (route_id, on_click_lua_code).
+static NOTIFICATION_CALLBACKS: LazyLock<Mutex<HashMap<String, (RouteId, String)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 const NEOVIDE_NOTIFICATION_ID_PREFIX: &str = "neovide";
 
 /// Returns the notification center if the app has a bundle identifier.
@@ -204,6 +211,7 @@ pub fn show_notification(
     title: &str,
     body: &str,
     subtitle: Option<&str>,
+    on_click: Option<&str>,
     is_focused: bool,
 ) {
     initialize_notifications();
@@ -213,6 +221,14 @@ pub fn show_notification(
     let center = UNUserNotificationCenter::currentNotificationCenter();
 
     let id_string = notification_identifier_for_route(route_id);
+
+    // Store the on_click callback if provided.
+    if let Some(lua_code) = on_click {
+        NOTIFICATION_CALLBACKS
+            .lock()
+            .unwrap()
+            .insert(id_string.clone(), (route_id, lua_code.to_string()));
+    }
 
     unsafe {
         let content = UNMutableNotificationContent::new();
@@ -286,6 +302,12 @@ fn merge_all_windows_if_native_tabs(ns_window: &NSWindow) {
 pub fn is_focus_suppressed() -> bool {
     SUPPRESS_FOCUS_EVENTS.with(|cell| cell.get())
         || SUPPRESS_UNTIL_NEXT_KEY_EVENT.with(|cell| cell.get())
+}
+
+pub fn is_app_active() -> bool {
+    MainThreadMarker::new().map_or(false, |mtm| {
+        NSApplication::sharedApplication(mtm).isActive()
+    })
 }
 
 struct FocusSuppressionGuard;
@@ -1694,6 +1716,18 @@ define_class!(
                         UserEvent::WindowCommand(WindowCommand::FocusWindow),
                         route_id,
                     ));
+
+                    // Execute on_click callback if registered.
+                    if let Some((_, on_click)) =
+                        NOTIFICATION_CALLBACKS.lock().unwrap().remove(&id_str)
+                    {
+                        let _ = proxy.send_event(EventPayload::for_route(
+                            UserEvent::WindowCommand(WindowCommand::NotificationClicked {
+                                on_click,
+                            }),
+                            route_id,
+                        ));
+                    }
                 } else {
                     log::warn!("Notification clicked before event loop proxy became available");
                 }
