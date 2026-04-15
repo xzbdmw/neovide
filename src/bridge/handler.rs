@@ -324,13 +324,14 @@ impl Handler for NeovimHandler {
             },
             #[cfg(target_os = "macos")]
             "neovide.notify" => match parse_notification_args(&arguments) {
-                Some((title, body, subtitle, on_click)) => {
+                Some((title, body, subtitle, on_click, auto_dismiss)) => {
                     let subtitle = subtitle.or_else(|| current_cwd_for_route(self.route_id));
                     self.send_window_command(WindowCommand::ShowNotification {
                         title,
                         body,
                         subtitle,
                         on_click,
+                        auto_dismiss,
                     });
                 }
                 None => warn!("neovide.notify called with invalid arguments: {arguments:?}"),
@@ -397,7 +398,7 @@ fn parse_force_click_args(
 #[cfg(target_os = "macos")]
 fn parse_notification_args(
     arguments: &[Value],
-) -> Option<(String, String, Option<String>, Option<String>)> {
+) -> Option<(String, String, Option<String>, Option<String>, bool)> {
     let map = arguments.first()?.as_map()?;
     let title = map
         .iter()
@@ -423,12 +424,17 @@ fn parse_notification_args(
         .and_then(|(_, value)| value.as_str())
         .filter(|value| !value.is_empty())
         .map(ToString::to_string);
+    let auto_dismiss = map
+        .iter()
+        .find(|(key, _)| key.as_str() == Some("auto_dismiss"))
+        .and_then(|(_, value)| value.as_bool())
+        .unwrap_or(false);
 
     if title.is_empty() && body.is_empty() {
         return None;
     }
 
-    Some((title, body, subtitle, on_click))
+    Some((title, body, subtitle, on_click, auto_dismiss))
 }
 
 #[cfg(target_os = "macos")]

@@ -105,6 +105,7 @@ pub enum WindowCommand {
         body: String,
         subtitle: Option<String>,
         on_click: Option<String>,
+        auto_dismiss: bool,
     },
     #[cfg(target_os = "macos")]
     NotificationClicked {

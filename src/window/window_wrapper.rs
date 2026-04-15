@@ -29,7 +29,7 @@ use {
     crate::window::MacShortcutCommand,
     crate::window::macos::tab_navigation::{TabNavigationAction, TabNavigationHotkeys},
     crate::window::macos::{
-        MacosWindowFeature, TouchpadStage, hide_application, is_app_active,
+        MacosWindowFeature, TouchpadStage, hide_application,
         is_focus_suppressed, is_tab_overview_active, native_tab_bar_enabled, show_notification,
         trigger_tab_overview,
     },
@@ -462,17 +462,30 @@ impl WinitWindowWrapper {
                 }
             }
             #[cfg(target_os = "macos")]
-            WindowCommand::ShowNotification { title, body, subtitle, on_click } => {
+            WindowCommand::ShowNotification { title, body, subtitle, on_click, auto_dismiss } => {
                 if let Some(route_id) = self.route_id_for_window(target_window_id) {
-                    let is_focused =
-                        is_app_active() && self.get_focused_route() == Some(target_window_id);
+                    // Check if this specific window is the key window (not just app-level focus).
+                    // NSWindow.isKeyWindow is per-window, unlike NSApplication.isActive which
+                    // can be true for multiple processes of the same app.
+                    let is_window_key = self
+                        .routes
+                        .get(&target_window_id)
+                        .map(|route| {
+                            let ns_window = crate::window::macos::get_ns_window(&route.window.winit_window);
+                            ns_window.isKeyWindow()
+                        })
+                        .unwrap_or(false);
+                    let auto_dismiss = is_window_key
+                        && (auto_dismiss
+                            || (self.get_focused_route() == Some(target_window_id)
+                                && on_click.is_none()));
                     show_notification(
                         route_id,
                         &title,
                         &body,
                         subtitle.as_deref(),
                         on_click.as_deref(),
-                        is_focused,
+                        auto_dismiss,
                     );
                 }
             }
@@ -590,8 +603,8 @@ impl WinitWindowWrapper {
                 );
             }
             #[cfg(target_os = "macos")]
-            WindowCommand::ShowNotification { title, body, subtitle, on_click } => {
-                show_notification(route_id, &title, &body, subtitle.as_deref(), on_click.as_deref(), false);
+            WindowCommand::ShowNotification { title, body, subtitle, on_click, auto_dismiss } => {
+                show_notification(route_id, &title, &body, subtitle.as_deref(), on_click.as_deref(), auto_dismiss);
             }
             _ => {}
         }

@@ -111,7 +111,7 @@ fn request_new_window() {
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-/// Maps notification identifier → (route_id, on_click_lua_code).
+/// Maps notification identifier → (route_id, on_click_command).
 static NOTIFICATION_CALLBACKS: LazyLock<Mutex<HashMap<String, (RouteId, String)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -212,7 +212,7 @@ pub fn show_notification(
     body: &str,
     subtitle: Option<&str>,
     on_click: Option<&str>,
-    is_focused: bool,
+    auto_dismiss: bool,
 ) {
     initialize_notifications();
     if !is_notification_available() {
@@ -223,11 +223,11 @@ pub fn show_notification(
     let id_string = notification_identifier_for_route(route_id);
 
     // Store the on_click callback if provided.
-    if let Some(lua_code) = on_click {
-        NOTIFICATION_CALLBACKS
-            .lock()
-            .unwrap()
-            .insert(id_string.clone(), (route_id, lua_code.to_string()));
+    if let Some(cmd) = on_click {
+        NOTIFICATION_CALLBACKS.lock().unwrap().insert(
+            id_string.clone(),
+            (route_id, cmd.to_string()),
+        );
     }
 
     unsafe {
@@ -257,9 +257,8 @@ pub fn show_notification(
         );
     }
 
-    // If the target window is already focused, auto-dismiss after 3 seconds.
-    // If a different window or app is focused, leave it persistent.
-    if is_focused {
+    // Auto-dismiss after 3 seconds if the caller says so.
+    if auto_dismiss {
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(3));
             let center = UNUserNotificationCenter::currentNotificationCenter();
