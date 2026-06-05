@@ -18,12 +18,12 @@ use crate::window::ForceClickKind;
 use crate::{
     LoggingReceiver, LoggingSender,
     bridge::{
-        GuiOption, NeovimWriter, ParallelCommand, RedrawEvent, clear_requested_cwd,
+        GuiOption, NeovimWriter, ParallelCommand, RedrawEvent, SerialCommand, clear_requested_cwd,
         clipboard::{get_clipboard_contents, set_clipboard_contents},
         current_cwd_for_route,
         events::parse_redraw_event,
         parse_progress_bar_event, register_route_cwd, requested_cwd_for_route, route_for_cwd,
-        send_ui,
+        route_handler, send_ui,
     },
     clipboard::ClipboardHandle,
     error_handling::ResultPanicExplanation,
@@ -211,6 +211,24 @@ impl Handler for NeovimHandler {
                         .map_err(|error| {
                             Value::from(format!("failed to focus window for cwd {cwd}: {error}"))
                         })?;
+                    Ok(Value::from(true))
+                } else {
+                    Ok(Value::from(false))
+                }
+            }
+            #[cfg(target_os = "macos")]
+            "neovide.close_window_for_cwd" => {
+                let Some(cwd) = arguments.first().and_then(Value::as_str) else {
+                    return Err(Value::from("neovide.close_window_for_cwd requires a cwd string"));
+                };
+                let cwd = normalize_cwd(cwd);
+                if let Some(route_id) = route_for_cwd(&cwd) {
+                    let Some(handler) = route_handler(route_id) else {
+                        return Err(Value::from(format!(
+                            "failed to close window for cwd {cwd}: route has no active handler"
+                        )));
+                    };
+                    send_ui(SerialCommand::Keyboard("<cmd>qa!<cr>".into()), &handler);
                     Ok(Value::from(true))
                 } else {
                     Ok(Value::from(false))

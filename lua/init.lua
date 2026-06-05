@@ -109,6 +109,10 @@ M.open_window_for_cwd = function(cwd)
     rpcnotify("neovide.open_window_for_cwd", cwd)
 end
 
+M.close_window_for_cwd = function(cwd)
+    return rpcrequest("neovide.close_window_for_cwd", cwd)
+end
+
 M.consume_pending_restore_cwd = function()
     return rpcrequest("neovide.consume_pending_restore_cwd")
 end

@@ -29,9 +29,8 @@ use {
     crate::window::MacShortcutCommand,
     crate::window::macos::tab_navigation::{TabNavigationAction, TabNavigationHotkeys},
     crate::window::macos::{
-        MacosWindowFeature, TouchpadStage, hide_application,
-        is_focus_suppressed, is_tab_overview_active, native_tab_bar_enabled, show_notification,
-        trigger_tab_overview,
+        MacosWindowFeature, TouchpadStage, hide_application, is_focus_suppressed,
+        is_tab_overview_active, native_tab_bar_enabled, show_notification, trigger_tab_overview,
     },
     crate::{error_msg, window::settings},
     glamour::Point2,
@@ -471,7 +470,8 @@ impl WinitWindowWrapper {
                         .routes
                         .get(&target_window_id)
                         .map(|route| {
-                            let ns_window = crate::window::macos::get_ns_window(&route.window.winit_window);
+                            let ns_window =
+                                crate::window::macos::get_ns_window(&route.window.winit_window);
                             ns_window.isKeyWindow()
                         })
                         .unwrap_or(false);
@@ -604,7 +604,14 @@ impl WinitWindowWrapper {
             }
             #[cfg(target_os = "macos")]
             WindowCommand::ShowNotification { title, body, subtitle, on_click, auto_dismiss } => {
-                show_notification(route_id, &title, &body, subtitle.as_deref(), on_click.as_deref(), auto_dismiss);
+                show_notification(
+                    route_id,
+                    &title,
+                    &body,
+                    subtitle.as_deref(),
+                    on_click.as_deref(),
+                    auto_dismiss,
+                );
             }
             _ => {}
         }

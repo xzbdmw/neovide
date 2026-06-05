@@ -527,6 +527,10 @@ pub fn set_active_route_handler(route_id: RouteId) {
     }
 }
 
+pub fn route_handler(route_id: RouteId) -> Option<NeovimHandler> {
+    ROUTE_HANDLER_REGISTRY.lock().unwrap().get(&route_id).cloned()
+}
+
 pub fn unregister_route_handler(route_id: RouteId) {
     let mut by_route = ROUTE_HANDLER_REGISTRY.lock().unwrap();
     by_route.remove(&route_id);

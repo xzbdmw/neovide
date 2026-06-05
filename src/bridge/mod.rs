@@ -53,7 +53,7 @@ pub use ui_commands::send_or_queue_file_drop;
 pub use ui_commands::{
     ParallelCommand, SerialCommand, clear_requested_cwd, current_cwd_for_route,
     register_requested_cwd, register_route_cwd, requested_cwd_for_route, require_active_handler,
-    route_for_cwd, send_ui, set_active_route_handler, start_ui_command_handler,
+    route_for_cwd, route_handler, send_ui, set_active_route_handler, start_ui_command_handler,
     unregister_route_handler,
 };
 
