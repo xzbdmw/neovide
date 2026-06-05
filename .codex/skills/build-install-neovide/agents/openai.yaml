@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Install Neovide"
+  short_description: "Build and install this Neovide app on macOS."
+  default_prompt: "Build and install Neovide from the current repository."
